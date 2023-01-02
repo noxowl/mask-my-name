@@ -58,11 +58,6 @@ fn scan_image(tess: &mut TessBaseApi, image: &Mat) -> Result<Text> {
     }
 }
 
-fn find_textarea_from_image(image: &Mat) -> Result<Vec<Rect>> {
-    let masked = mask_text(image)?;
-    find_textarea_from_mask(&masked)
-}
-
 fn init_tess(lang: &CStr) -> Result<TessBaseApi> {
     let mut ocr = TessBaseApi::create();
     match ocr.init_2(None, Some(lang)) {
@@ -77,7 +72,7 @@ fn mask_my_name(image_path: PathBuf, target_string: String) -> Result<()> {
     let lang = CString::new("eng")?;
     match init_tess(lang.as_c_str()) {
         Ok(mut tess) => {
-            for area in find_textarea_from_image(&image)? {
+            for area in find_textarea_from_mask(&mask_text(&image)?)? {
                 let mut roi = Mat::roi(&image, area).unwrap();
                 roi.copy_to(&mut target_image).unwrap();
                 match scan_image(&mut tess, &target_image) {
