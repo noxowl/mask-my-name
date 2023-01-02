@@ -32,7 +32,7 @@ fn mask_text(image: &Mat) -> Result<Mat> {
     Ok(image_dst)
 }
 
-fn find_text_area_from_mask(image: &Mat) -> Result<Vec<Rect>> {
+fn find_textarea_from_mask(image: &Mat) -> Result<Vec<Rect>> {
     let mut contours: VectorOfVectorOfPoint = Default::default();
     let mut rect_result: Vec<Rect> = Default::default();
     find_contours(image, &mut contours, RETR_EXTERNAL, CHAIN_APPROX_NONE, Default::default()).unwrap();
@@ -60,7 +60,7 @@ fn scan_image(tess: &mut TessBaseApi, image: &Mat) -> Result<Text> {
 
 fn find_textarea_from_image(image: &Mat) -> Result<Vec<Rect>> {
     let masked = mask_text(image)?;
-    find_text_area_from_mask(&masked)
+    find_textarea_from_mask(&masked)
 }
 
 fn init_tess(lang: &CStr) -> Result<TessBaseApi> {
