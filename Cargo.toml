@@ -1,0 +1,11 @@
+[package]
+name = "mask-my-name"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.68"
+opencv = "0.74.2"
+tesseract-plumbing = "0.7.1"
