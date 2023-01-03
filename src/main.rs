@@ -20,12 +20,12 @@ pub enum MaskMyNameError {
     #[error("Failed to get text from Tesseract.")]
     TessGetTextError(),
     #[error("Failed to create black bar Mat.")]
-    BlackBarCreationError(),
+    MaskingBarCreationError(),
     #[error("No matching string found.")]
     NoMatchingString(),
 }
 
-fn load_image(image_path: PathBuf) -> Result<Mat, MaskMyNameError> {
+fn load_image(image_path: &PathBuf) -> Result<Mat, MaskMyNameError> {
     match imread(image_path.to_str().expect("failed to convert PathBuf to str."), IMREAD_UNCHANGED) {
         Ok(image) => {
             Ok(image)
@@ -42,7 +42,7 @@ fn mask_text(image: &Mat) -> Result<Mat, MaskMyNameError> {
     cvt_color(image, &mut image_hsv, COLOR_BGR2HSV, 0).expect("Convert BGR2HSV failed. check input image file.");
     in_range(&image_hsv,
              &Scalar::new(0., 0., 0., 0.),
-             &Scalar::new(0., 0., 150., 255.),
+             &Scalar::new(0., 0., 30., 255.),
              &mut image_mask).expect("in_range failed. check converted Mat is in HSV Colour space.");;
     let kernel = get_structuring_element(MORPH_RECT, Size::new(5, 3), Point::new(-1, -1)).expect("failed to get_structuring_element.");
     let mut image_dst: Mat = Default::default();
@@ -54,11 +54,11 @@ fn mask_text(image: &Mat) -> Result<Mat, MaskMyNameError> {
 fn find_textarea_from_mask(image: &Mat) -> Result<Vec<Rect>, MaskMyNameError> {
     let mut contours: VectorOfVectorOfPoint = Default::default();
     let mut rect_result: Vec<Rect> = Default::default();
-    find_contours(image, &mut contours, RETR_EXTERNAL, CHAIN_APPROX_NONE, Default::default()).expect("find_contours failed. ");
+    find_contours(image, &mut contours, RETR_EXTERNAL, CHAIN_APPROX_NONE, Default::default()).expect("find_contours failed.");
     for contour in contours {
         let rect = bounding_rect(&contour).expect("");
-        if rect.height < rect.width && rect.height > 15 {
-            if rect.width / rect.height < 5 && rect.width < (image.cols() / 2) {
+        if rect.height < rect.width && rect.height > 10 {
+            if rect.width / rect.height < 15 && rect.width < (image.cols() / 2) {
                 rect_result.push(rect);
             }
         }
@@ -77,10 +77,10 @@ fn scan_image(tess: &mut TessBaseApi, image: &Mat) -> Result<Text, MaskMyNameErr
     }
 }
 
-fn black_bar(roi: &Mat) -> Result<Mat, MaskMyNameError> {
-    match Mat::new_rows_cols_with_default(roi.rows(), roi.cols(), roi.typ(), Scalar::new(0., 0., 0., 255.)) {
+fn masking_bar(roi: &Mat) -> Result<Mat, MaskMyNameError> {
+    match Mat::new_rows_cols_with_default(roi.rows(), roi.cols(), roi.typ(), Scalar::new(255., 255., 255., 255.)) {
         Ok(mat) => { Ok(mat) }
-        Err(_) => { Err(MaskMyNameError::BlackBarCreationError()) }
+        Err(_) => { Err(MaskMyNameError::MaskingBarCreationError()) }
     }
 }
 
@@ -92,10 +92,25 @@ fn init_tess(lang: &CStr) -> Result<TessBaseApi, MaskMyNameError> {
     }
 }
 
-fn mask_my_name(lang: CString, image_path: PathBuf, target_string: String) -> Result<Mat, MaskMyNameError> {
+fn supplement_target_string(target: &String) -> Vec<String> {
+    let mut strings = Vec::new();
+    match target.contains("_") {
+        true => {
+            strings.push(target.to_lowercase());
+            strings.push(target.replace("_", " ").to_lowercase());
+        }
+        false => {
+            strings.push(target.to_lowercase());
+        }
+    }
+    strings
+}
+
+fn mask_my_name(lang: CString, image_path: &PathBuf, target_string: &String) -> Result<Mat, MaskMyNameError> {
     let mut success = false;
     let mut image = load_image(image_path)?;
     let mut target_image: Mat = Default::default();
+    let mut strings = supplement_target_string(target_string);
     match init_tess(lang.as_c_str()) {
         Ok(mut tess) => {
             for area in find_textarea_from_mask(&mask_text(&image)?)? {
@@ -103,9 +118,10 @@ fn mask_my_name(lang: CString, image_path: PathBuf, target_string: String) -> Re
                 roi.copy_to(&mut target_image).expect("Failed to copy roi data.");
                 match scan_image(&mut tess, &target_image) {
                     Ok(text) => {
-                        if text.as_ref().to_str().unwrap_or("").to_lowercase().contains(&target_string.to_lowercase()) {
+                        let picked = text.as_ref().to_str().unwrap_or("").to_lowercase();
+                        if strings.iter().any(|s| picked.contains(s)) {
                             success = true;
-                            black_bar(&roi)?.copy_to(&mut roi).expect("Failed to copy black bar data.");
+                            masking_bar(&roi)?.copy_to(&mut roi).expect("Failed to copy black bar data.");
                         }
                     },
                     Err(e) => { return Err(e); }
@@ -125,26 +141,31 @@ struct Cli {
     target_string: String
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     let path = env::args().nth(1).expect("no path given");
     let target_string = env::args().nth(2).unwrap_or("".to_string());
     let args = Cli {
         image_path: PathBuf::from(path),
         target_string,
     };
-    match mask_my_name(CString::new("eng")?, args.image_path, args.target_string) {
+    match mask_my_name(CString::new("eng").expect("Convert str to CString failed."), &args.image_path, &args.target_string) {
         Ok(image) => {
             println!("Matching found. write masked image to disk.");
-            imwrite("output.jpg", &image, &Default::default()).expect("Failed to write image data.");
+            imwrite(format!("{}_masked.{}",
+                            &args.image_path.file_stem().unwrap_or("output".as_ref()).to_str().unwrap_or("output"),
+                            &args.image_path.extension().unwrap_or("jpg".as_ref()).to_str().unwrap_or("jpg")).as_str(),
+                    &image, &Default::default()).expect("Failed to write image data.");
         },
         Err(e) => {
             match e {
                 MaskMyNameError::NoMatchingString() => {
+                    // TODO: switch to japanese string
                     println!("{}", e);
                 }
-                _ => {}
+                _ => {
+                    println!("{}", e);
+                }
             }
         }
     }
-    Ok(())
 }
