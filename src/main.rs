@@ -31,8 +31,24 @@ fn load_image(image_path: &PathBuf) -> Result<Mat, MaskMyNameError> {
             Ok(image)
         },
         Err(_) => {
-            Err(MaskMyNameError::ImageReadError())?
+            Err(MaskMyNameError::ImageReadError())
         }
+    }
+}
+
+fn iterations(frame_height: i32) -> i32 {
+    if frame_height >= 720 {
+        5
+    } else {
+        3
+    }
+}
+
+fn max_range(frame_height: i32) -> f64 {
+    if frame_height >= 720 {
+        30.
+    } else {
+        80.
     }
 }
 
@@ -42,11 +58,11 @@ fn mask_text(image: &Mat) -> Result<Mat, MaskMyNameError> {
     cvt_color(image, &mut image_hsv, COLOR_BGR2HSV, 0).expect("Convert BGR2HSV failed. check input image file.");
     in_range(&image_hsv,
              &Scalar::new(0., 0., 0., 0.),
-             &Scalar::new(0., 0., 30., 255.),
+             &Scalar::new(0., 0., max_range(image.rows()), 255.),
              &mut image_mask).expect("in_range failed. check converted Mat is in HSV Colour space.");
     let kernel = get_structuring_element(MORPH_RECT, Size::new(5, 3), Point::new(-1, -1)).expect("failed to get_structuring_element.");
     let mut image_dst: Mat = Default::default();
-    dilate(&image_mask, &mut image_dst, &kernel, Point::new(-1, -1), 5, 0,
+    dilate(&image_mask, &mut image_dst, &kernel, Point::new(-1, -1), iterations(image.rows()), 0,
            morphology_default_border_value().expect("Failed to calling morphology_default_border_value.")).expect("Failed to calling dilate.");
     Ok(image_dst)
 }
@@ -57,7 +73,7 @@ fn find_textarea_from_mask(image: &Mat) -> Result<Vec<Rect>, MaskMyNameError> {
     find_contours(image, &mut contours, RETR_EXTERNAL, CHAIN_APPROX_NONE, Default::default()).expect("find_contours failed.");
     for contour in contours {
         let rect = bounding_rect(&contour).expect("");
-        if rect.height < rect.width && rect.height > 10 {
+        if rect.height < rect.width && rect.height > (image.rows() / 72) {
             if rect.width / rect.height < 15 && rect.width < (image.cols() / 2) {
                 rect_result.push(rect);
             }
@@ -108,7 +124,7 @@ fn supplement_target_string(target: &String) -> Vec<String> {
 
 fn mask_my_name(lang: CString, image_path: &PathBuf, target_string: &String) -> Result<Mat, MaskMyNameError> {
     let mut success = false;
-    let image = load_image(image_path)?;
+    let image = load_image(image_path).expect("Can't load image file from path.");
     let mut target_image: Mat = Default::default();
     let strings = supplement_target_string(target_string);
     match init_tess(lang.as_c_str()) {
@@ -148,6 +164,9 @@ fn main() {
         image_path: PathBuf::from(path),
         target_string,
     };
+    if !&args.image_path.is_file() {
+        panic!("Image file not exist! check your input filename or path.")
+    }
     match mask_my_name(CString::new("eng").expect("Convert str to CString failed."), &args.image_path, &args.target_string) {
         Ok(image) => {
             println!("Matching found. write masked image to disk.");
