@@ -5,7 +5,7 @@ use thiserror::Error;
 use opencv::core::{in_range, Point, Rect, Scalar, Size};
 use opencv::prelude::*;
 use opencv::imgcodecs::{imread, IMREAD_UNCHANGED, imwrite};
-use opencv::imgproc::{COLOR_BGR2GRAY, COLOR_BGR2HSV, COLOR_HSV2BGR, cvt_color, dilate, MORPH_RECT, get_structuring_element, morphology_default_border_value, find_contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE, bounding_rect, rectangle, CHAIN_APPROX_NONE};
+use opencv::imgproc::{COLOR_BGR2HSV, cvt_color, dilate, MORPH_RECT, get_structuring_element, morphology_default_border_value, find_contours, RETR_EXTERNAL, bounding_rect, CHAIN_APPROX_NONE};
 use opencv::types::VectorOfVectorOfPoint;
 use tesseract_plumbing::{TessBaseApi, Text};
 
@@ -43,7 +43,7 @@ fn mask_text(image: &Mat) -> Result<Mat, MaskMyNameError> {
     in_range(&image_hsv,
              &Scalar::new(0., 0., 0., 0.),
              &Scalar::new(0., 0., 30., 255.),
-             &mut image_mask).expect("in_range failed. check converted Mat is in HSV Colour space.");;
+             &mut image_mask).expect("in_range failed. check converted Mat is in HSV Colour space.");
     let kernel = get_structuring_element(MORPH_RECT, Size::new(5, 3), Point::new(-1, -1)).expect("failed to get_structuring_element.");
     let mut image_dst: Mat = Default::default();
     dilate(&image_mask, &mut image_dst, &kernel, Point::new(-1, -1), 5, 0,
@@ -73,7 +73,7 @@ fn scan_image(tess: &mut TessBaseApi, image: &Mat) -> Result<Text, MaskMyNameErr
                    image.channels(), (image.cols() * image.channels()) as c_int).expect("Set image to Tesseract failed.");
     match tess.get_utf8_text() {
         Ok(text) => { Ok(text) },
-        Err(e) => { Err(MaskMyNameError::TessGetTextError()) }
+        Err(_) => { Err(MaskMyNameError::TessGetTextError()) }
     }
 }
 
@@ -88,7 +88,7 @@ fn init_tess(lang: &CStr) -> Result<TessBaseApi, MaskMyNameError> {
     let mut ocr = TessBaseApi::create();
     match ocr.init_2(None, Some(lang)) {
         Ok(_) => { Ok(ocr) },
-        Err(e) => { Err(MaskMyNameError::TessInitError()) }
+        Err(_) => { Err(MaskMyNameError::TessInitError()) }
     }
 }
 
@@ -108,9 +108,9 @@ fn supplement_target_string(target: &String) -> Vec<String> {
 
 fn mask_my_name(lang: CString, image_path: &PathBuf, target_string: &String) -> Result<Mat, MaskMyNameError> {
     let mut success = false;
-    let mut image = load_image(image_path)?;
+    let image = load_image(image_path)?;
     let mut target_image: Mat = Default::default();
-    let mut strings = supplement_target_string(target_string);
+    let strings = supplement_target_string(target_string);
     match init_tess(lang.as_c_str()) {
         Ok(mut tess) => {
             for area in find_textarea_from_mask(&mask_text(&image)?)? {
