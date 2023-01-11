@@ -134,7 +134,7 @@ fn mask_my_name(lang: CString, image_path: &PathBuf, target_string: &String) -> 
                 roi.copy_to(&mut target_image).expect("Failed to copy roi data.");
                 match scan_image(&mut tess, &target_image) {
                     Ok(text) => {
-                        let picked = text.as_ref().to_str().unwrap_or("").to_lowercase();
+                        let picked = text.as_ref().to_str().unwrap_or("").to_lowercase().replace(".", "").replace(",", "");
                         if strings.iter().any(|s| picked.contains(s)) {
                             success = true;
                             masking_bar(&roi)?.copy_to(&mut roi).expect("Failed to copy black bar data.");
